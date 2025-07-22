@@ -1,6 +1,6 @@
-# 💎 Crystal Language Server (crystal-ls)
-
 <div align="center">
+
+# 💎 Crystal Language Server (crystal-ls)
 
 *A _**highly experimental**_ implementation of the Language Server Protocol (LSP) for the Crystal programming language, written in Go.*
 
