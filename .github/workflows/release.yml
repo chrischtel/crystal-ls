@@ -1,6 +1,9 @@
 name: Main
 
-on: push
+on: 
+  push:
+    branches: [main]
+    tags: ['v*']
 
 permissions:
   contents: write
@@ -11,7 +14,6 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    if: github.ref_type == 'tag'
     strategy:
       matrix:
         include:
@@ -34,11 +36,29 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
           go-version: ${{ env.GO_VERSION }}
+      
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+          else
+            # Get the latest version tag or use v0.1.0 as default
+            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.0")
+            # Remove 'v' prefix and increment patch version for dev releases
+            BASE_VERSION=${LATEST_TAG#v}
+            # For dev releases, use format: v{base}-dev.{short-sha}
+            VERSION="${BASE_VERSION}-dev.${GITHUB_SHA::8}"
+          fi
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Building version: ${VERSION}"
       
       - name: Build binary
         env:
@@ -46,8 +66,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
-          VERSION=${GITHUB_REF#refs/tags/}
-          go build -v -ldflags="-w -s -X main.version=${VERSION}" -o ${{ matrix.asset_name }} main.go
+          go build -v -ldflags="-w -s -X main.version=${{ steps.version.outputs.VERSION }}" -o ${{ matrix.asset_name }} main.go
       
       - name: Create archive (Unix)
         if: matrix.goos != 'windows'
@@ -66,14 +85,38 @@ jobs:
         with:
           name: ${{ matrix.asset_name }}-archive
           path: ${{ env.ASSET_PATH }}
-          retention-days: 1
+          retention-days: 30
 
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: github.ref_type == 'tag'
     
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Determine version and release type
+        id: version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+            RELEASE_TYPE="stable"
+            PRERELEASE=false
+          else
+            # Get the latest version tag or use v0.1.0 as default
+            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.0")
+            BASE_VERSION=${LATEST_TAG#v}
+            VERSION="${BASE_VERSION}-dev.${GITHUB_SHA::8}"
+            RELEASE_TYPE="dev"
+            PRERELEASE=true
+          fi
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "RELEASE_TYPE=${RELEASE_TYPE}" >> $GITHUB_OUTPUT
+          echo "PRERELEASE=${PRERELEASE}" >> $GITHUB_OUTPUT
+          echo "Release version: ${VERSION} (${RELEASE_TYPE})"
+      
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -83,5 +126,21 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.version.outputs.VERSION }}
+          name: Crystal Language Server v${{ steps.version.outputs.VERSION }}
           files: ./artifacts/*
           generate_release_notes: true
+          prerelease: ${{ steps.version.outputs.PRERELEASE }}
+          body: |
+            ## Crystal Language Server ${{ steps.version.outputs.VERSION }}
+            
+            **Release Type**: ${{ steps.version.outputs.RELEASE_TYPE == 'dev' && 'Development' || 'Stable' }}
+            **Commit**: ${{ github.sha }}
+            
+            ${{ steps.version.outputs.RELEASE_TYPE == 'dev' && '⚠️ This is an automated development release. Use stable releases for production.' || '' }}
+            
+            ### Download
+            Choose the appropriate binary for your platform:
+            - **Linux**: `crystal-ls-linux-amd64.tar.gz` or `crystal-ls-linux-arm64.tar.gz`
+            - **macOS**: `crystal-ls-darwin-amd64.tar.gz` or `crystal-ls-darwin-arm64.tar.gz`
+            - **Windows**: `crystal-ls-windows-amd64.exe.zip`

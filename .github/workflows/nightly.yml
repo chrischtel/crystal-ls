@@ -1,0 +1,185 @@
+name: Nightly Release
+
+on:
+  schedule:
+    # Run at 2 AM UTC every day
+    - cron: '0 2 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: "1.24"
+
+jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.check.outputs.has_changes }}
+      latest_commit: ${{ steps.check.outputs.latest_commit }}
+      base_version: ${{ steps.check.outputs.base_version }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Check for changes since last nightly
+        id: check
+        run: |
+          # Get current date for nightly tag
+          DATE=$(date +%Y%m%d)
+          
+          # Get the latest version tag or use v0.1.0 as default
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.0")
+          BASE_VERSION=${LATEST_TAG#v}
+          
+          # Check if there's already a nightly for today
+          NIGHTLY_TAG="v${BASE_VERSION}-nightly.${DATE}"
+          if git tag -l | grep -q "^${NIGHTLY_TAG}$"; then
+            echo "Nightly already exists for today: ${NIGHTLY_TAG}"
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Get the latest nightly tag
+          LATEST_NIGHTLY=$(git tag -l | grep -E "v.*-nightly\." | sort -V | tail -1)
+          
+          if [ -n "$LATEST_NIGHTLY" ]; then
+            # Check if there are commits since the last nightly
+            COMMITS_SINCE=$(git rev-list ${LATEST_NIGHTLY}..HEAD --count)
+            if [ "$COMMITS_SINCE" -eq "0" ]; then
+              echo "No changes since last nightly: ${LATEST_NIGHTLY}"
+              echo "has_changes=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            echo "Found ${COMMITS_SINCE} commits since ${LATEST_NIGHTLY}"
+          else
+            echo "No previous nightly found, creating first nightly"
+          fi
+          
+          echo "has_changes=true" >> $GITHUB_OUTPUT
+          echo "latest_commit=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "base_version=${BASE_VERSION}" >> $GITHUB_OUTPUT
+
+  build:
+    needs: check-changes
+    if: needs.check-changes.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            asset_name: crystal-ls-linux-amd64
+          - goos: linux
+            goarch: arm64
+            asset_name: crystal-ls-linux-arm64
+          - goos: windows
+            goarch: amd64
+            asset_name: crystal-ls-windows-amd64.exe
+          - goos: darwin
+            goarch: amd64
+            asset_name: crystal-ls-darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            asset_name: crystal-ls-darwin-arm64
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          DATE=$(date +%Y%m%d)
+          VERSION="${{ needs.check-changes.outputs.base_version }}-nightly.${DATE}"
+          go build -v -ldflags="-w -s -X main.version=${VERSION}" -o ${{ matrix.asset_name }} main.go
+      
+      - name: Create archive (Unix)
+        if: matrix.goos != 'windows'
+        run: |
+          tar -czf ${{ matrix.asset_name }}.tar.gz ${{ matrix.asset_name }} README.md LICENSE
+          echo "ASSET_PATH=${{ matrix.asset_name }}.tar.gz" >> $GITHUB_ENV
+      
+      - name: Create archive (Windows)
+        if: matrix.goos == 'windows'
+        run: |
+          zip -r ${{ matrix.asset_name }}.zip ${{ matrix.asset_name }} README.md LICENSE
+          echo "ASSET_PATH=${{ matrix.asset_name }}.zip" >> $GITHUB_ENV
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}-archive
+          path: ${{ env.ASSET_PATH }}
+          retention-days: 30
+
+  release:
+    needs: [check-changes, build]
+    if: needs.check-changes.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+          merge-multiple: true
+      
+      - name: Create nightly release
+        run: |
+          DATE=$(date +%Y%m%d)
+          VERSION="${{ needs.check-changes.outputs.base_version }}-nightly.${DATE}"
+          TAG="v${VERSION}"
+          
+          # Create and push the tag
+          git tag "${TAG}"
+          git push origin "${TAG}"
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.check-changes.outputs.base_version }}-nightly.$(date +%Y%m%d)
+          name: Crystal Language Server Nightly $(date +%Y%m%d)
+          files: ./artifacts/*
+          generate_release_notes: true
+          prerelease: true
+          body: |
+            ## 🌙 Nightly Build - $(date +%Y-%m-%d)
+            
+            **Automatic nightly build** of Crystal Language Server
+            
+            **Base Version**: ${{ needs.check-changes.outputs.base_version }}
+            **Latest Commit**: ${{ needs.check-changes.outputs.latest_commit }}
+            **Build Date**: $(date +%Y-%m-%d)
+            
+            ⚠️ **This is a nightly build** - It may contain experimental features and bugs. 
+            Use stable releases for production environments.
+            
+            ### What's New Since Last Nightly
+            <!-- Auto-generated release notes will appear here -->
+            
+            ### Download
+            Choose the appropriate binary for your platform:
+            - **Linux**: `crystal-ls-linux-amd64.tar.gz` or `crystal-ls-linux-arm64.tar.gz`
+            - **macOS**: `crystal-ls-darwin-amd64.tar.gz` or `crystal-ls-darwin-arm64.tar.gz`
+            - **Windows**: `crystal-ls-windows-amd64.exe.zip`
+            
+            ---
+            *This release was automatically generated by the nightly build workflow.*
