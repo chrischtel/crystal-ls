@@ -50,12 +50,8 @@ jobs:
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             VERSION=${GITHUB_REF#refs/tags/}
           else
-            # Get the latest version tag or use v0.1.0 as default
-            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.0")
-            # Remove 'v' prefix and increment patch version for dev releases
-            BASE_VERSION=${LATEST_TAG#v}
-            # For dev releases, use format: v{base}-dev.{short-sha}
-            VERSION="${BASE_VERSION}-dev.${GITHUB_SHA::8}"
+            # For dev releases, always use "latest-dev" with commit hash in binary
+            VERSION="latest-dev-${GITHUB_SHA::8}"
           fi
           echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
           echo "Building version: ${VERSION}"
@@ -104,17 +100,18 @@ jobs:
             VERSION=${GITHUB_REF#refs/tags/}
             RELEASE_TYPE="stable"
             PRERELEASE=false
+            TAG_NAME="v${VERSION}"
           else
-            # Get the latest version tag or use v0.1.0 as default
-            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.0")
-            BASE_VERSION=${LATEST_TAG#v}
-            VERSION="${BASE_VERSION}-dev.${GITHUB_SHA::8}"
+            # For dev releases, always use "latest-dev" tag
+            VERSION="latest-dev"
             RELEASE_TYPE="dev"
             PRERELEASE=true
+            TAG_NAME="latest-dev"
           fi
           echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
           echo "RELEASE_TYPE=${RELEASE_TYPE}" >> $GITHUB_OUTPUT
           echo "PRERELEASE=${PRERELEASE}" >> $GITHUB_OUTPUT
+          echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_OUTPUT
           echo "Release version: ${VERSION} (${RELEASE_TYPE})"
       
       - name: Download all artifacts
@@ -126,18 +123,19 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.VERSION }}
-          name: Crystal Language Server v${{ steps.version.outputs.VERSION }}
+          tag_name: ${{ steps.version.outputs.TAG_NAME }}
+          name: ${{ steps.version.outputs.RELEASE_TYPE == 'dev' && 'Crystal Language Server (Latest Development)' || format('Crystal Language Server v{0}', steps.version.outputs.VERSION) }}
           files: ./artifacts/*
           generate_release_notes: true
           prerelease: ${{ steps.version.outputs.PRERELEASE }}
           body: |
-            ## Crystal Language Server ${{ steps.version.outputs.VERSION }}
+            ## ${{ steps.version.outputs.RELEASE_TYPE == 'dev' && 'Latest Development Build' || format('Crystal Language Server v{0}', steps.version.outputs.VERSION) }}
             
-            **Release Type**: ${{ steps.version.outputs.RELEASE_TYPE == 'dev' && 'Development' || 'Stable' }}
+            **Release Type**: ${{ steps.version.outputs.RELEASE_TYPE == 'dev' && 'Development (Latest)' || 'Stable' }}
             **Commit**: ${{ github.sha }}
+            ${{ steps.version.outputs.RELEASE_TYPE == 'dev' && format('**Built**: {0}', github.event.head_commit.timestamp) || '' }}
             
-            ${{ steps.version.outputs.RELEASE_TYPE == 'dev' && '⚠️ This is an automated development release from the develop branch. Use stable releases for production.' || '' }}
+            ${{ steps.version.outputs.RELEASE_TYPE == 'dev' && '⚠️ This is the latest development build. It gets updated with every push to the develop branch. Use stable releases for production.' || '' }}
             
             ### Download
             Choose the appropriate binary for your platform:

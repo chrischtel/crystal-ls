@@ -5,7 +5,7 @@
 *A _**highly experimental**_ implementation of the Language Server Protocol (LSP) for the Crystal programming language, written in Go.*
 
 [![Latest Release](https://img.shields.io/github/v/release/chrischtel/crystal-ls?style=flat-square&logo=github&label=Stable)](https://github.com/chrischtel/crystal-ls/releases/latest)
-[![Latest Dev](https://img.shields.io/github/v/release/chrischtel/crystal-ls?include_prereleases&filter=*dev*&style=flat-square&logo=github&label=Dev&color=orange)](https://github.com/chrischtel/crystal-ls/releases?q=dev&expanded=true)
+[![Latest Dev](https://img.shields.io/github/v/release/chrischtel/crystal-ls?include_prereleases&filter=latest-dev&style=flat-square&logo=github&label=Dev&color=orange)](https://github.com/chrischtel/crystal-ls/releases/tag/latest-dev)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/chrischtel/crystal-ls?style=flat-square&logo=go)](https://golang.org/)
 [![License](https://img.shields.io/github/license/chrischtel/crystal-ls?style=flat-square)](LICENSE)
 
@@ -37,11 +37,11 @@ The project is in its early stages. The immediate focus is on establishing a sol
 
 | Platform | Stable | Development |
 |----------|--------|-------------|
-| **Linux (x64)** | [📥 Download](https://github.com/chrischtel/crystal-ls/releases/latest/download/crystal-ls-linux-amd64.tar.gz) | [🔧 Browse](https://github.com/chrischtel/crystal-ls/releases?q=dev&expanded=true) |
-| **Linux (ARM64)** | [📥 Download](https://github.com/chrischtel/crystal-ls/releases/latest/download/crystal-ls-linux-arm64.tar.gz) | [🔧 Browse](https://github.com/chrischtel/crystal-ls/releases?q=dev&expanded=true) |
-| **macOS (Intel)** | [📥 Download](https://github.com/chrischtel/crystal-ls/releases/latest/download/crystal-ls-darwin-amd64.tar.gz) | [🔧 Browse](https://github.com/chrischtel/crystal-ls/releases?q=dev&expanded=true) |
-| **macOS (Apple Silicon)** | [📥 Download](https://github.com/chrischtel/crystal-ls/releases/latest/download/crystal-ls-darwin-arm64.tar.gz) | [🔧 Browse](https://github.com/chrischtel/crystal-ls/releases?q=dev&expanded=true) |
-| **Windows (x64)** | [📥 Download](https://github.com/chrischtel/crystal-ls/releases/latest/download/crystal-ls-windows-amd64.exe.zip) | [🔧 Browse](https://github.com/chrischtel/crystal-ls/releases?q=dev&expanded=true) |
+| **Linux (x64)** | [📥 Download](https://github.com/chrischtel/crystal-ls/releases/latest/download/crystal-ls-linux-amd64.tar.gz) | [🔧 Download](https://github.com/chrischtel/crystal-ls/releases/download/latest-dev/crystal-ls-linux-amd64.tar.gz) |
+| **Linux (ARM64)** | [📥 Download](https://github.com/chrischtel/crystal-ls/releases/latest/download/crystal-ls-linux-arm64.tar.gz) | [🔧 Download](https://github.com/chrischtel/crystal-ls/releases/download/latest-dev/crystal-ls-linux-arm64.tar.gz) |
+| **macOS (Intel)** | [📥 Download](https://github.com/chrischtel/crystal-ls/releases/latest/download/crystal-ls-darwin-amd64.tar.gz) | [🔧 Download](https://github.com/chrischtel/crystal-ls/releases/download/latest-dev/crystal-ls-darwin-amd64.tar.gz) |
+| **macOS (Apple Silicon)** | [📥 Download](https://github.com/chrischtel/crystal-ls/releases/latest/download/crystal-ls-darwin-arm64.tar.gz) | [🔧 Download](https://github.com/chrischtel/crystal-ls/releases/download/latest-dev/crystal-ls-darwin-arm64.tar.gz) |
+| **Windows (x64)** | [📥 Download](https://github.com/chrischtel/crystal-ls/releases/latest/download/crystal-ls-windows-amd64.exe.zip) | [🔧 Download](https://github.com/chrischtel/crystal-ls/releases/download/latest-dev/crystal-ls-windows-amd64.exe.zip) |
 
 </div>
 
@@ -126,7 +126,7 @@ crystal-ls/
 | Type | Trigger | Format | Purpose |
 |------|---------|--------|---------|
 | **Stable** | Manual tag | `v0.1.0` | Production releases |
-| **Development** | Push to develop | `v0.1.0-dev.abc1234` | Latest features from develop branch |
+| **Development** | Push to develop | `latest-dev` (updated in-place) | Latest features from develop branch |
 
 ---
 
