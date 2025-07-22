@@ -1,0 +1,70 @@
+name: Main
+
+on: push
+
+env:
+  GO_VERSION: "1.21"
+
+jobs:
+  build:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            asset_name: crystal-ls-linux-amd64
+          - goos: linux
+            goarch: arm64
+            asset_name: crystal-ls-linux-arm64
+          - goos: windows
+            goarch: amd64
+            asset_name: crystal-ls-windows-amd64.exe
+          - goos: darwin
+            goarch: amd64
+            asset_name: crystal-ls-darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            asset_name: crystal-ls-darwin-arm64
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then
+            VERSION="dev-${GITHUB_SHA::8}"
+          fi
+          go build -v -ldflags="-w -s -X main.version=${VERSION}" -o ${{ matrix.asset_name }} main.go
+      
+      - name: Create archive (Unix)
+        if: matrix.goos != 'windows'
+        run: |
+          tar -czf ${{ matrix.asset_name }}.tar.gz ${{ matrix.asset_name }} README.md LICENSE
+          echo "ASSET_PATH=${{ matrix.asset_name }}.tar.gz" >> $GITHUB_ENV
+      
+      - name: Create archive (Windows)
+        if: matrix.goos == 'windows'
+        run: |
+          zip -r ${{ matrix.asset_name }}.zip ${{ matrix.asset_name }} README.md LICENSE
+          echo "ASSET_PATH=${{ matrix.asset_name }}.zip" >> $GITHUB_ENV
+      
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref_type == 'tag'
+        with:
+          files: ${{ env.ASSET_PATH }}
+          generate_release_notes: true
