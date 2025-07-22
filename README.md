@@ -4,10 +4,10 @@
 
 *A _**highly experimental**_ implementation of the Language Server Protocol (LSP) for the Crystal programming language, written in Go.*
 
-[![Latest Release](https://img.shields.io/github/v/release/chrischtel/crystal-ls?style=flat-square&logo=github&label=Stable)](https://github.com/chrischtel/crystal-ls/releases/latest)
-[![Latest Dev](https://img.shields.io/github/v/release/chrischtel/crystal-ls?include_prereleases&filter=latest-dev&style=flat-square&logo=github&label=Dev&color=orange)](https://github.com/chrischtel/crystal-ls/releases/tag/latest-dev)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/chrischtel/crystal-ls?style=flat-square&logo=go)](https://golang.org/)
-[![License](https://img.shields.io/github/license/chrischtel/crystal-ls?style=flat-square)](LICENSE)
+[![Latest Release](https://img.shields.io/github/v/release/chrischtel/gocry?style=flat-square&logo=github&label=Stable&v=1)](https://github.com/chrischtel/gocry/releases/latest)
+[![Latest Dev](https://img.shields.io/badge/dev-latest--dev-orange?style=flat-square&logo=github&v=1)](https://github.com/chrischtel/gocry/releases/tag/latest-dev)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/chrischtel/gocry?style=flat-square&logo=go&v=1)](https://golang.org/)
+[![License](https://img.shields.io/github/license/chrischtel/gocry?style=flat-square&v=1)](LICENSE)
 
 </div>
 
