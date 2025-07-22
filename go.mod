@@ -1,4 +1,4 @@
-module gocry
+module crystal-ls
 
 go 1.21
 

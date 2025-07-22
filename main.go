@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 
-	"gocry/internal/lsp"
+	"crystal-ls/internal/lsp"
 )
 
 // version is set at build time via -ldflags

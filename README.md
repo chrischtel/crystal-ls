@@ -1,13 +1,13 @@
-# 💎 Crystal Language Server (gocry)
+# 💎 Crystal Language Server (crystal-ls)
 
 <div align="center">
 
-*A modern Language Server Protocol (LSP) implementation for the Crystal programming language, written in Go.*
+*A _**highly experimental**_ implementation of the Language Server Protocol (LSP) for the Crystal programming language, written in Go.*
 
-[![Latest Release](https://img.shields.io/github/v/release/chrischtel/gocry?style=flat-square&logo=github&label=Stable)](https://github.com/chrischtel/gocry/releases/latest)
-[![Latest Dev](https://img.shields.io/github/v/release/chrischtel/gocry?include_prereleases&filter=*dev*&style=flat-square&logo=github&label=Dev&color=orange)](https://github.com/chrischtel/gocry/releases?q=dev&expanded=true)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/chrischtel/gocry?style=flat-square&logo=go)](https://golang.org/)
-[![License](https://img.shields.io/github/license/chrischtel/gocry?style=flat-square)](LICENSE)
+[![Latest Release](https://img.shields.io/github/v/release/chrischtel/crystal-ls?style=flat-square&logo=github&label=Stable)](https://github.com/chrischtel/crystal-ls/releases/latest)
+[![Latest Dev](https://img.shields.io/github/v/release/chrischtel/crystal-ls?include_prereleases&filter=*dev*&style=flat-square&logo=github&label=Dev&color=orange)](https://github.com/chrischtel/crystal-ls/releases?q=dev&expanded=true)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/chrischtel/crystal-ls?style=flat-square&logo=go)](https://golang.org/)
+[![License](https://img.shields.io/github/license/chrischtel/crystal-ls?style=flat-square)](LICENSE)
 
 </div>
 
@@ -15,51 +15,17 @@
 
 ## ✨ Features
 
-### 🚀 **Current Features**
-- **Syntax Highlighting** - Full Crystal syntax support
-- **Diagnostics** - Real-time error detection and reporting
-- **Code Completion** - Intelligent autocomplete for:
-  - Local classes and methods
-  - Built-in Crystal types and functions
-  - Variable names and properties
-- **Hover Information** - Documentation and type information on hover
-- **Go to Definition** - Navigate to symbol definitions
-- **Document Symbols** - Outline view of classes, methods, and variables
-- **VS Code Integration** - Seamless integration with the official Crystal extension
 
-### 🔧 **Language Server Protocol Support**
-- `textDocument/completion` - Code completion
-- `textDocument/hover` - Hover information
-- `textDocument/definition` - Go to definition
-- `textDocument/documentSymbol` - Document outline
-- `textDocument/publishDiagnostics` - Error reporting
-
----
 
 ## 🗺️ Roadmap
+The project is in its early stages. The immediate focus is on establishing a solid foundation by implementing core LSP functionalities.
 
-### � **Short Term (v0.2.x)**
-- [ ] **Cross-file symbol resolution** - Navigate between files
-- [ ] **Crystal tool integration** - Leverage `crystal tool context` for advanced analysis
-- [ ] **Type inference** - Better type information and completion
-- [ ] **Workspace symbols** - Project-wide symbol search
-- [ ] **Code formatting** - Integration with Crystal formatter
-- [ ] **Signature help** - Function parameter hints
+- [ ] **Document Synchronization** (`textDocument/didOpen`, `didChange`, `didSave`, `didClose`)
+- [ ] **Hover** (`textDocument/hover`)
+- [ ] **Go to Definition** (`textDocument/definition`)
+- [ ] **Code Completion** (`textDocument/completion`)
+- [ ] **Diagnostics** (`textDocument/publishDiagnostics`)
 
-### 🎯 **Medium Term (v0.3.x)**
-- [ ] **Refactoring support** - Rename symbols, extract methods
-- [ ] **Find references** - Find all usages of symbols
-- [ ] **Semantic highlighting** - Advanced syntax coloring
-- [ ] **Call hierarchy** - Navigate call relationships
-- [ ] **Inlay hints** - Type annotations and parameter names
-- [ ] **Code lens** - Inline actionable information
-
-### 🌟 **Long Term (v1.0+)**
-- [ ] **Debugging support** - Integration with Crystal debugger
-- [ ] **Testing integration** - Run and debug Crystal specs
-- [ ] **Advanced diagnostics** - Performance suggestions and best practices
-- [ ] **Plugin system** - Extensible architecture for custom features
-- [ ] **Multi-root workspace** - Support for complex project structures
 
 ---
 
@@ -71,11 +37,11 @@
 
 | Platform | Stable | Development |
 |----------|--------|-------------|
-| **Linux (x64)** | [📥 Download](https://github.com/chrischtel/gocry/releases/latest/download/crystal-ls-linux-amd64.tar.gz) | [🔧 Browse](https://github.com/chrischtel/gocry/releases?q=dev&expanded=true) |
-| **Linux (ARM64)** | [📥 Download](https://github.com/chrischtel/gocry/releases/latest/download/crystal-ls-linux-arm64.tar.gz) | [🔧 Browse](https://github.com/chrischtel/gocry/releases?q=dev&expanded=true) |
-| **macOS (Intel)** | [📥 Download](https://github.com/chrischtel/gocry/releases/latest/download/crystal-ls-darwin-amd64.tar.gz) | [🔧 Browse](https://github.com/chrischtel/gocry/releases?q=dev&expanded=true) |
-| **macOS (Apple Silicon)** | [📥 Download](https://github.com/chrischtel/gocry/releases/latest/download/crystal-ls-darwin-arm64.tar.gz) | [🔧 Browse](https://github.com/chrischtel/gocry/releases?q=dev&expanded=true) |
-| **Windows (x64)** | [📥 Download](https://github.com/chrischtel/gocry/releases/latest/download/crystal-ls-windows-amd64.exe.zip) | [🔧 Browse](https://github.com/chrischtel/gocry/releases?q=dev&expanded=true) |
+| **Linux (x64)** | [📥 Download](https://github.com/chrischtel/crystal-ls/releases/latest/download/crystal-ls-linux-amd64.tar.gz) | [🔧 Browse](https://github.com/chrischtel/crystal-ls/releases?q=dev&expanded=true) |
+| **Linux (ARM64)** | [📥 Download](https://github.com/chrischtel/crystal-ls/releases/latest/download/crystal-ls-linux-arm64.tar.gz) | [🔧 Browse](https://github.com/chrischtel/crystal-ls/releases?q=dev&expanded=true) |
+| **macOS (Intel)** | [📥 Download](https://github.com/chrischtel/crystal-ls/releases/latest/download/crystal-ls-darwin-amd64.tar.gz) | [🔧 Browse](https://github.com/chrischtel/crystal-ls/releases?q=dev&expanded=true) |
+| **macOS (Apple Silicon)** | [📥 Download](https://github.com/chrischtel/crystal-ls/releases/latest/download/crystal-ls-darwin-arm64.tar.gz) | [🔧 Browse](https://github.com/chrischtel/crystal-ls/releases?q=dev&expanded=true) |
+| **Windows (x64)** | [📥 Download](https://github.com/chrischtel/crystal-ls/releases/latest/download/crystal-ls-windows-amd64.exe.zip) | [🔧 Browse](https://github.com/chrischtel/crystal-ls/releases?q=dev&expanded=true) |
 
 </div>
 
@@ -126,8 +92,8 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/chrischtel/gocry.git
-cd gocry
+git clone https://github.com/chrischtel/crystal-ls.git
+cd crystal-ls
 
 # Build the language server
 go build -o crystal-ls main.go
@@ -142,7 +108,7 @@ go test ./...
 ### Project Structure
 
 ```
-gocry/
+crystal-ls/
 ├── main.go                 # Entry point
 ├── internal/
 │   └── lsp/
