@@ -3,6 +3,14 @@ name: Release
 on: 
   push:
     branches: [develop]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - '.github/**'
+      - '*.txt'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.editorconfig'
     tags: ['v*']
 
 permissions:
@@ -14,6 +22,8 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Skip merge commits to avoid unnecessary dev releases
+    if: "!contains(github.event.head_commit.message, 'Merge pull request')"
     strategy:
       matrix:
         include:
