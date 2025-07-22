@@ -3,8 +3,23 @@ name: CI
 on:
   push:
     branches: [ main, develop, ci-testing ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - '*.txt'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.editorconfig'
   pull_request:
     branches: [ main, develop, ci-testing ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - '*.txt'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.editorconfig'
+
 
 env:
   GO_VERSION: "1.24"
