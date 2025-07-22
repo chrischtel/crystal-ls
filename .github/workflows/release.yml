@@ -1,8 +1,8 @@
-name: Main
+name: Release
 
 on: 
   push:
-    branches: [main]
+    branches: [develop]
     tags: ['v*']
 
 permissions:
@@ -137,7 +137,7 @@ jobs:
             **Release Type**: ${{ steps.version.outputs.RELEASE_TYPE == 'dev' && 'Development' || 'Stable' }}
             **Commit**: ${{ github.sha }}
             
-            ${{ steps.version.outputs.RELEASE_TYPE == 'dev' && '⚠️ This is an automated development release. Use stable releases for production.' || '' }}
+            ${{ steps.version.outputs.RELEASE_TYPE == 'dev' && '⚠️ This is an automated development release from the develop branch. Use stable releases for production.' || '' }}
             
             ### Download
             Choose the appropriate binary for your platform:
