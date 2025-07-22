@@ -11,6 +11,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
     strategy:
       matrix:
         include:
@@ -46,9 +47,6 @@ jobs:
           CGO_ENABLED: 0
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
-          if [ "$GITHUB_REF_TYPE" != "tag" ]; then
-            VERSION="dev-${GITHUB_SHA::8}"
-          fi
           go build -v -ldflags="-w -s -X main.version=${VERSION}" -o ${{ matrix.asset_name }} main.go
       
       - name: Create archive (Unix)
@@ -63,9 +61,27 @@ jobs:
           zip -r ${{ matrix.asset_name }}.zip ${{ matrix.asset_name }} README.md LICENSE
           echo "ASSET_PATH=${{ matrix.asset_name }}.zip" >> $GITHUB_ENV
       
-      - name: Release
-        uses: softprops/action-gh-release@v2
-        if: github.ref_type == 'tag'
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
         with:
-          files: ${{ env.ASSET_PATH }}
+          name: ${{ matrix.asset_name }}-archive
+          path: ${{ env.ASSET_PATH }}
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+          merge-multiple: true
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./artifacts/*
           generate_release_notes: true
