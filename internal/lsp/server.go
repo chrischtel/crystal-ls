@@ -464,11 +464,17 @@ func (s *Server) handleCancelRequest(ctx context.Context, conn *jsonrpc2.Conn, r
 }
 
 func (s *Server) publishDiagnostics(ctx context.Context, conn *jsonrpc2.Conn, uri string, diagnostics []Diagnostic) {
+	// Always ensure we have a non-nil slice
+	if diagnostics == nil {
+		diagnostics = []Diagnostic{}
+	}
+
 	params := map[string]any{
 		"uri":         uri,
 		"diagnostics": diagnostics,
 	}
 
+	// s.logger.Printf("Publishing %d diagnostics for %s", len(diagnostics), uri)
 	conn.Notify(ctx, "textDocument/publishDiagnostics", params)
 }
 

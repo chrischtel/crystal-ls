@@ -107,6 +107,11 @@ func (a *CrystalAnalyzer) AnalyzeDocument(doc *TextDocumentItem) []Diagnostic {
 	// Use tokens for additional analysis
 	diagnostics = append(diagnostics, a.analyzeTokens(tokens, doc.URI)...)
 
+	// Ensure we always return a valid slice
+	if diagnostics == nil {
+		diagnostics = []Diagnostic{}
+	}
+
 	return diagnostics
 }
 
@@ -137,7 +142,17 @@ func (a *CrystalAnalyzer) parseDocumentStructure(doc *TextDocumentItem) {
 			if currentClass != "" {
 				// Add to current class
 				if classInfo, exists := a.documentClasses[currentClass]; exists {
-					classInfo.Methods = append(classInfo.Methods, methodName)
+					// Check if method already exists to avoid duplicates
+					exists := false
+					for _, existing := range classInfo.Methods {
+						if existing == methodName {
+							exists = true
+							break
+						}
+					}
+					if !exists {
+						classInfo.Methods = append(classInfo.Methods, methodName)
+					}
 				}
 			}
 			// Also track globally
@@ -154,15 +169,34 @@ func (a *CrystalAnalyzer) parseDocumentStructure(doc *TextDocumentItem) {
 			if currentClass != "" {
 				// Add to current class (getter method)
 				if classInfo, exists := a.documentClasses[currentClass]; exists {
-					classInfo.Methods = append(classInfo.Methods, propertyName)
-					classInfo.Methods = append(classInfo.Methods, propertyName+"=") // setter
+					// Check if property getter already exists
+					getterExists := false
+					setterExists := false
+					for _, existing := range classInfo.Methods {
+						if existing == propertyName {
+							getterExists = true
+						}
+						if existing == propertyName+"=" {
+							setterExists = true
+						}
+					}
+					if !getterExists {
+						classInfo.Methods = append(classInfo.Methods, propertyName)
+					}
+					if !setterExists {
+						classInfo.Methods = append(classInfo.Methods, propertyName+"=") // setter
+					}
 				}
 			}
 		}
 
-		// Reset current class on 'end'
-		if strings.TrimSpace(line) == "end" && currentClass != "" {
-			currentClass = ""
+		// Reset current class on 'end' (but be careful about nested ends)
+		if strings.TrimSpace(line) == "end" {
+			if currentClass != "" {
+				// Simple approach: any 'end' at top level resets class
+				// In a real parser, we'd track nesting properly
+				currentClass = ""
+			}
 		}
 	}
 }
@@ -269,7 +303,7 @@ func (a *CrystalAnalyzer) analyzeCompletionContext(doc *TextDocumentItem, pos Po
 func (a *CrystalAnalyzer) getAdvancedMethodCompletions(context CompletionContext, doc *TextDocumentItem) []CompletionItem {
 	var items []CompletionItem
 
-	// Get methods for the inferred type
+	// Get methods for the inferred type (don't re-parse to avoid performance issues)
 	methods := a.getMethodsForType(context.ObjectType)
 
 	for _, method := range methods {
@@ -284,9 +318,7 @@ func (a *CrystalAnalyzer) getAdvancedMethodCompletions(context CompletionContext
 	}
 
 	return items
-}
-
-// getKeywordCompletions provides keyword completions
+} // getKeywordCompletions provides keyword completions
 func (a *CrystalAnalyzer) getKeywordCompletions(context CompletionContext) []CompletionItem {
 	var items []CompletionItem
 
@@ -337,69 +369,136 @@ func (a *CrystalAnalyzer) getGeneralCompletions(context CompletionContext) []Com
 func (a *CrystalAnalyzer) inferTypeOfExpression(expr string, doc *TextDocumentItem, pos Position) string {
 	expr = strings.TrimSpace(expr)
 
-	// Check for literal types
-	if strings.HasPrefix(expr, "\"") || strings.HasPrefix(expr, "'") {
+	// Check for literal types first (simple patterns)
+	if len(expr) >= 2 && ((strings.HasPrefix(expr, "\"") && strings.HasSuffix(expr, "\"")) ||
+		(strings.HasPrefix(expr, "'") && strings.HasSuffix(expr, "'"))) {
 		return "String"
 	}
-	if matched, _ := regexp.MatchString(`^\d+$`, expr); matched {
+
+	// Simple number check
+	if len(expr) > 0 && expr[0] >= '0' && expr[0] <= '9' {
+		if strings.Contains(expr, ".") {
+			return "Float64"
+		}
 		return "Int32"
 	}
-	if matched, _ := regexp.MatchString(`^\d+\.\d+$`, expr); matched {
-		return "Float64"
-	}
+
 	if expr == "true" || expr == "false" {
 		return "Bool"
 	}
-	if strings.HasPrefix(expr, "[") {
+	if strings.HasPrefix(expr, "[") && strings.HasSuffix(expr, "]") {
 		return "Array"
 	}
-	if strings.HasPrefix(expr, "{") {
+	if strings.HasPrefix(expr, "{") && strings.HasSuffix(expr, "}") {
 		return "Hash"
 	}
 
-	// Check for variable assignments in scope
+	// Check for variable assignments in scope (simplified)
 	if varType, exists := a.findVariableType(expr, doc, pos); exists {
 		return varType
 	}
 
-	return "Object" // Default fallback
-}
-
-// findVariableType looks for variable type definitions
+	return "String" // Default to String for safety
+} // findVariableType looks for variable type definitions
 func (a *CrystalAnalyzer) findVariableType(varName string, doc *TextDocumentItem, pos Position) (string, bool) {
 	lines := strings.Split(doc.Text, "\n")
 
+	// Limit search to avoid infinite loops - only look back 50 lines maximum
+	startLine := pos.Line
+	if startLine > 50 {
+		startLine = pos.Line - 50
+	} else {
+		startLine = 0
+	}
+
 	// Look backwards from current position for variable assignments
-	for i := pos.Line; i >= 0; i-- {
+	for i := pos.Line; i >= startLine; i-- {
 		line := lines[i]
 
-		// Pattern: varName = Type.new
-		if match := regexp.MustCompile(regexp.QuoteMeta(varName) + `\s*=\s*(\w+)\.new`).FindStringSubmatch(line); match != nil {
-			return match[1], true
+		// Simple string matching instead of complex regex to avoid performance issues
+		// Pattern: varName = Type.new (most common in Crystal)
+		if strings.Contains(line, varName+" = ") && strings.Contains(line, ".new") {
+			// Extract type name between = and .new
+			parts := strings.Split(line, varName+" = ")
+			if len(parts) > 1 {
+				afterEquals := strings.TrimSpace(parts[1])
+				if strings.Contains(afterEquals, ".new") {
+					typeParts := strings.Split(afterEquals, ".new")
+					if len(typeParts) > 0 {
+						typeName := strings.TrimSpace(typeParts[0])
+						if typeName != "" && isValidIdentifier(typeName) {
+							return typeName, true
+						}
+					}
+				}
+			}
 		}
 
 		// Pattern: varName = "string"
-		if match := regexp.MustCompile(regexp.QuoteMeta(varName) + `\s*=\s*".*"`).FindStringSubmatch(line); match != nil {
+		if strings.Contains(line, varName+" = \"") {
 			return "String", true
 		}
 
-		// Pattern: varName = 123
-		if match := regexp.MustCompile(regexp.QuoteMeta(varName) + `\s*=\s*\d+`).FindStringSubmatch(line); match != nil {
-			return "Int32", true
+		// Pattern: varName = [...]
+		if strings.Contains(line, varName+" = [") {
+			return "Array", true
 		}
 
-		// Pattern: varName : Type = ...
-		if match := regexp.MustCompile(regexp.QuoteMeta(varName) + `\s*:\s*(\w+)\s*=`).FindStringSubmatch(line); match != nil {
-			return match[1], true
+		// Pattern: varName = {...}
+		if strings.Contains(line, varName+" = {") {
+			return "Hash", true
 		}
 	}
 
 	return "", false
 }
 
+// isValidIdentifier checks if a string is a valid Crystal identifier
+func isValidIdentifier(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	// Must start with letter or underscore
+	if !(s[0] >= 'A' && s[0] <= 'Z') && !(s[0] >= 'a' && s[0] <= 'z') && s[0] != '_' {
+		return false
+	}
+	// Rest can be letters, digits, or underscores
+	for i := 1; i < len(s); i++ {
+		c := s[i]
+		if !(c >= 'A' && c <= 'Z') && !(c >= 'a' && c <= 'z') && !(c >= '0' && c <= '9') && c != '_' {
+			return false
+		}
+	}
+	return true
+}
+
 // getMethodsForType returns available methods for a given type
 func (a *CrystalAnalyzer) getMethodsForType(typeName string) []MethodInfo {
 	var methods []MethodInfo
+
+	// Local class methods FIRST (so they appear at the top)
+	if classInfo, exists := a.documentClasses[typeName]; exists {
+		for _, methodName := range classInfo.Methods {
+			detail := fmt.Sprintf("%s() : %s", methodName, typeName)
+			documentation := fmt.Sprintf("Method of %s class", typeName)
+
+			// Better labeling for properties
+			if strings.HasSuffix(methodName, "=") {
+				detail = fmt.Sprintf("%s : %s", methodName, "setter")
+				documentation = fmt.Sprintf("Property setter of %s class", typeName)
+			} else if !strings.Contains(methodName, "(") && !strings.Contains(methodName, "?") && !strings.Contains(methodName, "!") {
+				// Likely a property getter (no special characters, no parentheses)
+				detail = fmt.Sprintf("%s : property", methodName)
+				documentation = fmt.Sprintf("Property getter of %s class", typeName)
+			}
+
+			methods = append(methods, MethodInfo{
+				Name:          methodName,
+				Signature:     detail,
+				Documentation: documentation,
+			})
+		}
+	}
 
 	// Built-in type methods with enhanced information
 	switch typeName {
@@ -457,17 +556,6 @@ func (a *CrystalAnalyzer) getMethodsForType(typeName string) []MethodInfo {
 			{Name: "*", Signature: "*(other) : self", Documentation: "Multiplication"},
 			{Name: "/", Signature: "/(other) : self", Documentation: "Division"},
 		}...)
-	}
-
-	// Local class methods
-	if classInfo, exists := a.documentClasses[typeName]; exists {
-		for _, methodName := range classInfo.Methods {
-			methods = append(methods, MethodInfo{
-				Name:          methodName,
-				Signature:     fmt.Sprintf("%s : %s", methodName, typeName),
-				Documentation: fmt.Sprintf("Method of %s class", typeName),
-			})
-		}
 	}
 
 	// Standard library methods that apply to all objects
@@ -577,10 +665,23 @@ func getLastWord(text string) string {
 
 // extractObjectName extracts the base object name from an expression
 func (a *CrystalAnalyzer) extractObjectName(expr string) string {
-	// Extract the base object name from an expression
-	parts := strings.Fields(expr)
+	expr = strings.TrimSpace(expr)
+
+	// Handle simple variable names
+	if matched, _ := regexp.MatchString(`^\w+$`, expr); matched {
+		return expr
+	}
+
+	// Handle method chains: obj.method1.method2 -> obj
+	parts := strings.Split(expr, ".")
 	if len(parts) > 0 {
-		return parts[len(parts)-1]
+		return strings.TrimSpace(parts[0])
+	}
+
+	// Extract the base object name from an expression
+	words := strings.Fields(expr)
+	if len(words) > 0 {
+		return words[len(words)-1]
 	}
 	return expr
 }
@@ -1000,16 +1101,48 @@ func (a *CrystalAnalyzer) checkSyntaxError(line string, lineNum int) *Diagnostic
 	// Simple syntax checks
 	trimmed := strings.TrimSpace(line)
 
-	// Check for mismatched quotes
-	if strings.Count(trimmed, `"`)%2 != 0 && !strings.Contains(trimmed, `\"`) {
-		return &Diagnostic{
-			Range: Range{
-				Start: Position{Line: lineNum, Character: 0},
-				End:   Position{Line: lineNum, Character: len(line)},
-			},
-			Severity: DiagnosticSeverityError,
-			Message:  "Mismatched quotes",
-			Source:   "crystal-lsp",
+	// Skip empty lines and comments
+	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		return nil
+	}
+
+	// Check for mismatched quotes (improved logic)
+	inString := false
+	inSingleQuote := false
+	escaped := false
+
+	for _, char := range trimmed {
+		if escaped {
+			escaped = false
+			continue
+		}
+
+		if char == '\\' {
+			escaped = true
+			continue
+		}
+
+		if char == '"' && !inSingleQuote {
+			inString = !inString
+		} else if char == '\'' && !inString {
+			inSingleQuote = !inSingleQuote
+		}
+	}
+
+	// Only report error if we have an unclosed quote on this specific line
+	// and the line contains quote characters
+	if (inString || inSingleQuote) && (strings.Contains(trimmed, `"`) || strings.Contains(trimmed, `'`)) {
+		// Make sure this isn't a string interpolation or multi-line string
+		if !strings.Contains(trimmed, "#{") && !strings.HasSuffix(trimmed, "\\") {
+			return &Diagnostic{
+				Range: Range{
+					Start: Position{Line: lineNum, Character: 0},
+					End:   Position{Line: lineNum, Character: len(line)},
+				},
+				Severity: DiagnosticSeverityError,
+				Message:  "Unclosed quote on this line",
+				Source:   "crystal-lsp",
+			}
 		}
 	}
 
