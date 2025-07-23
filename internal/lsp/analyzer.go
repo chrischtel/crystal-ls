@@ -131,7 +131,7 @@ func (a *CrystalAnalyzer) parseDocumentStructure(doc *TextDocumentItem) {
 			}
 		}
 
-		// Find method definitions
+		// Find method definitions (including property methods)
 		if match := regexp.MustCompile(`^\s*def\s+(\w+[\?!]?)`).FindStringSubmatch(line); match != nil {
 			methodName := match[1]
 			if currentClass != "" {
@@ -148,6 +148,18 @@ func (a *CrystalAnalyzer) parseDocumentStructure(doc *TextDocumentItem) {
 			}
 		}
 
+		// Find property definitions (property name : Type creates getter/setter)
+		if match := regexp.MustCompile(`^\s*property\s+(\w+)`).FindStringSubmatch(line); match != nil {
+			propertyName := match[1]
+			if currentClass != "" {
+				// Add to current class (getter method)
+				if classInfo, exists := a.documentClasses[currentClass]; exists {
+					classInfo.Methods = append(classInfo.Methods, propertyName)
+					classInfo.Methods = append(classInfo.Methods, propertyName+"=") // setter
+				}
+			}
+		}
+
 		// Reset current class on 'end'
 		if strings.TrimSpace(line) == "end" && currentClass != "" {
 			currentClass = ""
@@ -155,14 +167,14 @@ func (a *CrystalAnalyzer) parseDocumentStructure(doc *TextDocumentItem) {
 	}
 }
 
-// GetCompletions provides completion suggestions
+// GetCompletions provides intelligent completion suggestions
 func (a *CrystalAnalyzer) GetCompletions(doc *TextDocumentItem, pos Position) CompletionList {
 	var items []CompletionItem
 
-	// Parse document structure first
+	// Parse document structure first for better context
 	a.parseDocumentStructure(doc)
 
-	// Get the current line
+	// Get the current line and context
 	lines := strings.Split(doc.Text, "\n")
 	if pos.Line >= len(lines) {
 		return CompletionList{Items: items}
@@ -175,49 +187,402 @@ func (a *CrystalAnalyzer) GetCompletions(doc *TextDocumentItem, pos Position) Co
 
 	prefix := currentLine[:pos.Character]
 
-	// Check if we're completing after a dot (method completion)
-	if strings.Contains(prefix, ".") {
-		items = append(items, a.getMethodCompletions(prefix, doc)...)
-	} else {
-		// Get the word being typed
-		lastWord := getLastWord(prefix)
+	// Analyze completion context
+	context := a.analyzeCompletionContext(doc, pos, prefix)
 
-		// Add keywords
-		for _, keyword := range a.keywords {
-			if lastWord == "" || strings.HasPrefix(keyword, lastWord) {
-				items = append(items, CompletionItem{
-					Label: keyword,
-					Kind:  CompletionItemKindKeyword,
-				})
-			}
-		}
-
-		// Add built-in types
-		for _, typ := range a.builtinTypes {
-			if lastWord == "" || strings.HasPrefix(strings.ToLower(typ), strings.ToLower(lastWord)) {
-				items = append(items, CompletionItem{
-					Label: typ,
-					Kind:  CompletionItemKindClass,
-				})
-			}
-		}
-
-		// Add local class names
-		for className := range a.documentClasses {
-			if lastWord == "" || strings.HasPrefix(strings.ToLower(className), strings.ToLower(lastWord)) {
-				items = append(items, CompletionItem{
-					Label:  className,
-					Kind:   CompletionItemKindClass,
-					Detail: "Local class",
-				})
-			}
-		}
+	switch context.Type {
+	case CompletionContextMethod:
+		items = append(items, a.getAdvancedMethodCompletions(context, doc)...)
+	case CompletionContextKeyword:
+		items = append(items, a.getKeywordCompletions(context)...)
+	default:
+		// General completions (keywords, types, local classes)
+		items = append(items, a.getGeneralCompletions(context)...)
 	}
 
 	return CompletionList{
 		IsIncomplete: false,
 		Items:        items,
 	}
+}
+
+// Enhanced completion types and structures
+
+type CompletionContext struct {
+	Type       CompletionContextType
+	Prefix     string
+	ObjectType string
+	ObjectName string
+	LastWord   string
+	InMethod   bool
+	InClass    bool
+	ScopeInfo  *ScopeInfo
+}
+
+type CompletionContextType int
+
+const (
+	CompletionContextGeneral CompletionContextType = iota
+	CompletionContextMethod
+	CompletionContextKeyword
+)
+
+type ScopeInfo struct {
+	Variables map[string]string // variable name -> type
+	Methods   []string
+	ClassName string
+}
+
+type MethodInfo struct {
+	Name          string
+	Signature     string
+	Documentation string
+}
+
+// analyzeCompletionContext determines what kind of completion we need
+func (a *CrystalAnalyzer) analyzeCompletionContext(doc *TextDocumentItem, pos Position, prefix string) CompletionContext {
+	context := CompletionContext{
+		Type:      CompletionContextGeneral,
+		Prefix:    prefix,
+		LastWord:  getLastWord(prefix),
+		ScopeInfo: a.analyzeScopeAt(doc, pos),
+	}
+
+	// Check if we're completing after a dot (method completion)
+	if dotIndex := strings.LastIndex(prefix, "."); dotIndex != -1 {
+		beforeDot := strings.TrimSpace(prefix[:dotIndex])
+		afterDot := prefix[dotIndex+1:]
+
+		// Determine the type of the object before the dot
+		objectType := a.inferTypeOfExpression(beforeDot, doc, pos)
+
+		context.Type = CompletionContextMethod
+		context.ObjectType = objectType
+		context.ObjectName = a.extractObjectName(beforeDot)
+		context.LastWord = afterDot
+	}
+
+	return context
+}
+
+// getAdvancedMethodCompletions provides intelligent method completions
+func (a *CrystalAnalyzer) getAdvancedMethodCompletions(context CompletionContext, doc *TextDocumentItem) []CompletionItem {
+	var items []CompletionItem
+
+	// Get methods for the inferred type
+	methods := a.getMethodsForType(context.ObjectType)
+
+	for _, method := range methods {
+		if context.LastWord == "" || strings.HasPrefix(strings.ToLower(method.Name), strings.ToLower(context.LastWord)) {
+			items = append(items, CompletionItem{
+				Label:         method.Name,
+				Kind:          CompletionItemKindMethod,
+				Detail:        method.Signature,
+				Documentation: method.Documentation,
+			})
+		}
+	}
+
+	return items
+}
+
+// getKeywordCompletions provides keyword completions
+func (a *CrystalAnalyzer) getKeywordCompletions(context CompletionContext) []CompletionItem {
+	var items []CompletionItem
+
+	for _, keyword := range a.keywords {
+		if context.LastWord == "" || strings.HasPrefix(keyword, context.LastWord) {
+			items = append(items, CompletionItem{
+				Label: keyword,
+				Kind:  CompletionItemKindKeyword,
+			})
+		}
+	}
+
+	return items
+}
+
+// getGeneralCompletions provides general completions (keywords, types, classes)
+func (a *CrystalAnalyzer) getGeneralCompletions(context CompletionContext) []CompletionItem {
+	var items []CompletionItem
+
+	// Add keywords
+	items = append(items, a.getKeywordCompletions(context)...)
+
+	// Add built-in types
+	for _, typ := range a.builtinTypes {
+		if context.LastWord == "" || strings.HasPrefix(strings.ToLower(typ), strings.ToLower(context.LastWord)) {
+			items = append(items, CompletionItem{
+				Label: typ,
+				Kind:  CompletionItemKindClass,
+			})
+		}
+	}
+
+	// Add local class names
+	for className := range a.documentClasses {
+		if context.LastWord == "" || strings.HasPrefix(strings.ToLower(className), strings.ToLower(context.LastWord)) {
+			items = append(items, CompletionItem{
+				Label:  className,
+				Kind:   CompletionItemKindClass,
+				Detail: "Local class",
+			})
+		}
+	}
+
+	return items
+}
+
+// inferTypeOfExpression tries to determine the type of an expression
+func (a *CrystalAnalyzer) inferTypeOfExpression(expr string, doc *TextDocumentItem, pos Position) string {
+	expr = strings.TrimSpace(expr)
+
+	// Check for literal types
+	if strings.HasPrefix(expr, "\"") || strings.HasPrefix(expr, "'") {
+		return "String"
+	}
+	if matched, _ := regexp.MatchString(`^\d+$`, expr); matched {
+		return "Int32"
+	}
+	if matched, _ := regexp.MatchString(`^\d+\.\d+$`, expr); matched {
+		return "Float64"
+	}
+	if expr == "true" || expr == "false" {
+		return "Bool"
+	}
+	if strings.HasPrefix(expr, "[") {
+		return "Array"
+	}
+	if strings.HasPrefix(expr, "{") {
+		return "Hash"
+	}
+
+	// Check for variable assignments in scope
+	if varType, exists := a.findVariableType(expr, doc, pos); exists {
+		return varType
+	}
+
+	return "Object" // Default fallback
+}
+
+// findVariableType looks for variable type definitions
+func (a *CrystalAnalyzer) findVariableType(varName string, doc *TextDocumentItem, pos Position) (string, bool) {
+	lines := strings.Split(doc.Text, "\n")
+
+	// Look backwards from current position for variable assignments
+	for i := pos.Line; i >= 0; i-- {
+		line := lines[i]
+
+		// Pattern: varName = Type.new
+		if match := regexp.MustCompile(regexp.QuoteMeta(varName) + `\s*=\s*(\w+)\.new`).FindStringSubmatch(line); match != nil {
+			return match[1], true
+		}
+
+		// Pattern: varName = "string"
+		if match := regexp.MustCompile(regexp.QuoteMeta(varName) + `\s*=\s*".*"`).FindStringSubmatch(line); match != nil {
+			return "String", true
+		}
+
+		// Pattern: varName = 123
+		if match := regexp.MustCompile(regexp.QuoteMeta(varName) + `\s*=\s*\d+`).FindStringSubmatch(line); match != nil {
+			return "Int32", true
+		}
+
+		// Pattern: varName : Type = ...
+		if match := regexp.MustCompile(regexp.QuoteMeta(varName) + `\s*:\s*(\w+)\s*=`).FindStringSubmatch(line); match != nil {
+			return match[1], true
+		}
+	}
+
+	return "", false
+}
+
+// getMethodsForType returns available methods for a given type
+func (a *CrystalAnalyzer) getMethodsForType(typeName string) []MethodInfo {
+	var methods []MethodInfo
+
+	// Built-in type methods with enhanced information
+	switch typeName {
+	case "String":
+		methods = append(methods, []MethodInfo{
+			{Name: "size", Signature: "size : Int32", Documentation: "Returns the size of the string"},
+			{Name: "length", Signature: "length : Int32", Documentation: "Returns the length of the string"},
+			{Name: "empty?", Signature: "empty? : Bool", Documentation: "Returns true if the string is empty"},
+			{Name: "upcase", Signature: "upcase : String", Documentation: "Returns a new string with all characters uppercase"},
+			{Name: "downcase", Signature: "downcase : String", Documentation: "Returns a new string with all characters lowercase"},
+			{Name: "strip", Signature: "strip : String", Documentation: "Returns a new string with leading and trailing whitespace removed"},
+			{Name: "split", Signature: "split(delimiter : String) : Array(String)", Documentation: "Splits the string by delimiter"},
+			{Name: "gsub", Signature: "gsub(pattern, replacement) : String", Documentation: "Replaces all occurrences of pattern with replacement"},
+			{Name: "includes?", Signature: "includes?(substring : String) : Bool", Documentation: "Returns true if string contains substring"},
+			{Name: "starts_with?", Signature: "starts_with?(prefix : String) : Bool", Documentation: "Returns true if string starts with prefix"},
+			{Name: "ends_with?", Signature: "ends_with?(suffix : String) : Bool", Documentation: "Returns true if string ends with suffix"},
+		}...)
+
+	case "Array":
+		methods = append(methods, []MethodInfo{
+			{Name: "size", Signature: "size : Int32", Documentation: "Returns the size of the array"},
+			{Name: "length", Signature: "length : Int32", Documentation: "Returns the length of the array"},
+			{Name: "empty?", Signature: "empty? : Bool", Documentation: "Returns true if the array is empty"},
+			{Name: "push", Signature: "push(element) : self", Documentation: "Adds element to the end of array"},
+			{Name: "<<", Signature: "<<(element) : self", Documentation: "Adds element to the end of array"},
+			{Name: "pop", Signature: "pop : T?", Documentation: "Removes and returns the last element"},
+			{Name: "first", Signature: "first : T", Documentation: "Returns the first element"},
+			{Name: "last", Signature: "last : T", Documentation: "Returns the last element"},
+			{Name: "each", Signature: "each(&block) : Nil", Documentation: "Iterates over each element"},
+			{Name: "map", Signature: "map(&block) : Array", Documentation: "Returns a new array with transformed elements"},
+			{Name: "select", Signature: "select(&block) : Array", Documentation: "Returns a new array with elements that match the block"},
+			{Name: "reject", Signature: "reject(&block) : Array", Documentation: "Returns a new array without elements that match the block"},
+		}...)
+
+	case "Hash":
+		methods = append(methods, []MethodInfo{
+			{Name: "size", Signature: "size : Int32", Documentation: "Returns the size of the hash"},
+			{Name: "length", Signature: "length : Int32", Documentation: "Returns the length of the hash"},
+			{Name: "empty?", Signature: "empty? : Bool", Documentation: "Returns true if the hash is empty"},
+			{Name: "keys", Signature: "keys : Array", Documentation: "Returns an array of all keys"},
+			{Name: "values", Signature: "values : Array", Documentation: "Returns an array of all values"},
+			{Name: "has_key?", Signature: "has_key?(key) : Bool", Documentation: "Returns true if hash contains key"},
+			{Name: "each", Signature: "each(&block) : Nil", Documentation: "Iterates over each key-value pair"},
+		}...)
+
+	case "Int32", "Int64", "Float32", "Float64":
+		methods = append(methods, []MethodInfo{
+			{Name: "abs", Signature: "abs : self", Documentation: "Returns the absolute value"},
+			{Name: "round", Signature: "round : Int32", Documentation: "Returns the rounded value"},
+			{Name: "ceil", Signature: "ceil : Int32", Documentation: "Returns the ceiling value"},
+			{Name: "floor", Signature: "floor : Int32", Documentation: "Returns the floor value"},
+			{Name: "to_s", Signature: "to_s : String", Documentation: "Converts to string"},
+			{Name: "+", Signature: "+(other) : self", Documentation: "Addition"},
+			{Name: "-", Signature: "-(other) : self", Documentation: "Subtraction"},
+			{Name: "*", Signature: "*(other) : self", Documentation: "Multiplication"},
+			{Name: "/", Signature: "/(other) : self", Documentation: "Division"},
+		}...)
+	}
+
+	// Local class methods
+	if classInfo, exists := a.documentClasses[typeName]; exists {
+		for _, methodName := range classInfo.Methods {
+			methods = append(methods, MethodInfo{
+				Name:          methodName,
+				Signature:     fmt.Sprintf("%s : %s", methodName, typeName),
+				Documentation: fmt.Sprintf("Method of %s class", typeName),
+			})
+		}
+	}
+
+	// Standard library methods that apply to all objects
+	methods = append(methods, []MethodInfo{
+		{Name: "to_s", Signature: "to_s : String", Documentation: "Returns string representation"},
+		{Name: "inspect", Signature: "inspect : String", Documentation: "Returns detailed string representation"},
+		{Name: "class", Signature: "class : Class", Documentation: "Returns the class of the object"},
+		{Name: "nil?", Signature: "nil? : Bool", Documentation: "Returns true if object is nil"},
+	}...)
+
+	return methods
+}
+
+// analyzeScopeAt analyzes the scope at a given position
+func (a *CrystalAnalyzer) analyzeScopeAt(doc *TextDocumentItem, pos Position) *ScopeInfo {
+	scope := &ScopeInfo{
+		Variables: make(map[string]string),
+		Methods:   []string{},
+	}
+
+	lines := strings.Split(doc.Text, "\n")
+
+	// Analyze from beginning to current position
+	inClass := ""
+
+	for i := 0; i <= pos.Line && i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+
+		// Track class scope
+		if match := regexp.MustCompile(`^class\s+(\w+)`).FindStringSubmatch(line); match != nil {
+			inClass = match[1]
+			scope.ClassName = inClass
+		}
+
+		// Track variable assignments
+		if match := regexp.MustCompile(`(\w+)\s*=\s*(.+)`).FindStringSubmatch(line); match != nil {
+			varName := match[1]
+			expr := match[2]
+			varType := a.inferTypeFromExpression(expr)
+			scope.Variables[varName] = varType
+		}
+
+		// Track instance variables
+		if match := regexp.MustCompile(`(@\w+)\s*=\s*(.+)`).FindStringSubmatch(line); match != nil {
+			varName := match[1]
+			expr := match[2]
+			varType := a.inferTypeFromExpression(expr)
+			scope.Variables[varName] = varType
+		}
+
+		if line == "end" && inClass != "" {
+			inClass = ""
+		}
+	}
+
+	return scope
+}
+
+// inferTypeFromExpression infers type from an expression
+func (a *CrystalAnalyzer) inferTypeFromExpression(expr string) string {
+	expr = strings.TrimSpace(expr)
+
+	// String literals
+	if strings.HasPrefix(expr, "\"") || strings.HasPrefix(expr, "'") {
+		return "String"
+	}
+
+	// Number literals
+	if matched, _ := regexp.MatchString(`^\d+$`, expr); matched {
+		return "Int32"
+	}
+	if matched, _ := regexp.MatchString(`^\d+\.\d+$`, expr); matched {
+		return "Float64"
+	}
+
+	// Boolean literals
+	if expr == "true" || expr == "false" {
+		return "Bool"
+	}
+
+	// Array literals
+	if strings.HasPrefix(expr, "[") {
+		return "Array"
+	}
+
+	// Hash literals
+	if strings.HasPrefix(expr, "{") {
+		return "Hash"
+	}
+
+	// Constructor calls
+	if match := regexp.MustCompile(`(\w+)\.new`).FindStringSubmatch(expr); match != nil {
+		return match[1]
+	}
+
+	return "Object"
+}
+
+// getLastWord extracts the last word from a string
+func getLastWord(text string) string {
+	words := strings.Fields(text)
+	if len(words) > 0 {
+		return words[len(words)-1]
+	}
+	return text
+}
+
+// extractObjectName extracts the base object name from an expression
+func (a *CrystalAnalyzer) extractObjectName(expr string) string {
+	// Extract the base object name from an expression
+	parts := strings.Fields(expr)
+	if len(parts) > 0 {
+		return parts[len(parts)-1]
+	}
+	return expr
 }
 
 // GetHover provides hover information
@@ -320,7 +685,170 @@ func (a *CrystalAnalyzer) GetDefinition(doc *TextDocumentItem, pos Position) []L
 		}
 	}
 
+	// Check if it's a method definition
+	for className, classInfo := range a.documentClasses {
+		for _, methodName := range classInfo.Methods {
+			if word == methodName {
+				// Find the method definition in the document
+				for lineNum, line := range lines {
+					if match := regexp.MustCompile(`^\s*def\s+` + regexp.QuoteMeta(methodName) + `\b`).FindStringSubmatch(line); match != nil {
+						return []Location{
+							{
+								URI: doc.URI,
+								Range: Range{
+									Start: Position{Line: lineNum, Character: strings.Index(line, methodName)},
+									End:   Position{Line: lineNum, Character: strings.Index(line, methodName) + len(methodName)},
+								},
+							},
+						}
+					}
+				}
+			}
+		}
+		_ = className // Use the variable to avoid unused error
+	}
+
+	// Check if it's a variable assignment
+	for i := pos.Line; i >= 0; i-- {
+		line := lines[i]
+		// Look for variable assignments like: word = something
+		if match := regexp.MustCompile(`\b` + regexp.QuoteMeta(word) + `\s*=`).FindStringSubmatch(line); match != nil {
+			return []Location{
+				{
+					URI: doc.URI,
+					Range: Range{
+						Start: Position{Line: i, Character: strings.Index(line, word)},
+						End:   Position{Line: i, Character: strings.Index(line, word) + len(word)},
+					},
+				},
+			}
+		}
+	}
+
 	return []Location{}
+}
+
+// GetReferences finds all references to a symbol
+func (a *CrystalAnalyzer) GetReferences(doc *TextDocumentItem, pos Position, includeDeclaration bool) []Location {
+	lines := strings.Split(doc.Text, "\n")
+	if pos.Line >= len(lines) {
+		return []Location{}
+	}
+
+	currentLine := lines[pos.Line]
+	word := getWordAtPosition(currentLine, pos.Character)
+	var locations []Location
+
+	// Search through all lines for references
+	for lineNum, line := range lines {
+		// Find all occurrences of the word
+		index := 0
+		for {
+			foundIndex := strings.Index(line[index:], word)
+			if foundIndex == -1 {
+				break
+			}
+
+			actualIndex := index + foundIndex
+
+			// Check if it's a whole word (not part of another word)
+			isWholeWord := true
+			if actualIndex > 0 {
+				prev := rune(line[actualIndex-1])
+				if isWordChar(prev) {
+					isWholeWord = false
+				}
+			}
+			if actualIndex+len(word) < len(line) {
+				next := rune(line[actualIndex+len(word)])
+				if isWordChar(next) {
+					isWholeWord = false
+				}
+			}
+
+			if isWholeWord {
+				// Skip declaration if not requested
+				isDeclation := false
+				if regexp.MustCompile(`^\s*(class|def|module)\s+`+regexp.QuoteMeta(word)+`\b`).MatchString(line) ||
+					regexp.MustCompile(`\b`+regexp.QuoteMeta(word)+`\s*=`).MatchString(line) {
+					isDeclation = true
+				}
+
+				if includeDeclaration || !isDeclation {
+					locations = append(locations, Location{
+						URI: doc.URI,
+						Range: Range{
+							Start: Position{Line: lineNum, Character: actualIndex},
+							End:   Position{Line: lineNum, Character: actualIndex + len(word)},
+						},
+					})
+				}
+			}
+
+			index = actualIndex + len(word)
+		}
+	}
+
+	return locations
+}
+
+// GetDocumentHighlights highlights all instances of a symbol in the document
+func (a *CrystalAnalyzer) GetDocumentHighlights(doc *TextDocumentItem, pos Position) []DocumentHighlight {
+	lines := strings.Split(doc.Text, "\n")
+	if pos.Line >= len(lines) {
+		return []DocumentHighlight{}
+	}
+
+	currentLine := lines[pos.Line]
+	word := getWordAtPosition(currentLine, pos.Character)
+	var highlights []DocumentHighlight
+
+	// Search through all lines for the same word
+	for lineNum, line := range lines {
+		index := 0
+		for {
+			foundIndex := strings.Index(line[index:], word)
+			if foundIndex == -1 {
+				break
+			}
+
+			actualIndex := index + foundIndex
+
+			// Check if it's a whole word
+			isWholeWord := true
+			if actualIndex > 0 && isWordChar(rune(line[actualIndex-1])) {
+				isWholeWord = false
+			}
+			if actualIndex+len(word) < len(line) && isWordChar(rune(line[actualIndex+len(word)])) {
+				isWholeWord = false
+			}
+
+			if isWholeWord {
+				kind := DocumentHighlightKindText
+
+				// Determine highlight kind
+				if regexp.MustCompile(`^\s*(class|def|module)\s+` + regexp.QuoteMeta(word) + `\b`).MatchString(line) {
+					kind = DocumentHighlightKindWrite // Declaration
+				} else if regexp.MustCompile(`\b` + regexp.QuoteMeta(word) + `\s*=`).MatchString(line) {
+					kind = DocumentHighlightKindWrite // Assignment
+				} else {
+					kind = DocumentHighlightKindRead // Usage
+				}
+
+				highlights = append(highlights, DocumentHighlight{
+					Range: Range{
+						Start: Position{Line: lineNum, Character: actualIndex},
+						End:   Position{Line: lineNum, Character: actualIndex + len(word)},
+					},
+					Kind: kind,
+				})
+			}
+
+			index = actualIndex + len(word)
+		}
+	}
+
+	return highlights
 }
 
 // GetDocumentSymbols provides document symbols
@@ -379,6 +907,93 @@ func (a *CrystalAnalyzer) GetDocumentSymbols(doc *TextDocumentItem) []SymbolInfo
 	return symbols
 }
 
+// GetDocumentFormat provides basic document formatting
+func (a *CrystalAnalyzer) GetDocumentFormat(doc *TextDocumentItem) []TextEdit {
+	var edits []TextEdit
+	lines := strings.Split(doc.Text, "\n")
+
+	for lineNum, line := range lines {
+		// Basic formatting rules for Crystal
+		formatted := line
+
+		// Remove trailing whitespace
+		trimmed := strings.TrimRightFunc(line, func(r rune) bool {
+			return r == ' ' || r == '\t'
+		})
+
+		// Fix indentation (convert tabs to spaces, ensure consistent spacing)
+		if strings.Contains(line, "\t") || strings.TrimSpace(line) != "" {
+			content := strings.TrimSpace(line)
+			if content != "" {
+				// Apply consistent 2-space indentation for basic cases
+				// This is a simplified version - a full formatter would need more context
+				if strings.HasPrefix(content, "class ") || strings.HasPrefix(content, "module ") {
+					formatted = content // Top level, no indent
+				} else if strings.HasPrefix(content, "def ") {
+					formatted = "  " + content // Method inside class
+				} else if content == "end" {
+					formatted = content // Same level as opening
+				} else {
+					// Keep existing indentation for now, just clean it up
+					formatted = trimmed
+				}
+			} else {
+				formatted = "" // Empty line
+			}
+		}
+
+		if formatted != line {
+			edits = append(edits, TextEdit{
+				Range: Range{
+					Start: Position{Line: lineNum, Character: 0},
+					End:   Position{Line: lineNum, Character: len(line)},
+				},
+				NewText: formatted,
+			})
+		}
+	}
+
+	return edits
+}
+
+// GetFoldingRanges provides code folding ranges
+func (a *CrystalAnalyzer) GetFoldingRanges(doc *TextDocumentItem) []FoldingRange {
+	var ranges []FoldingRange
+	lines := strings.Split(doc.Text, "\n")
+
+	var stack []FoldingRangeStart
+
+	for lineNum, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Start of foldable regions
+		if regexp.MustCompile(`^\s*(class|module|def|if|unless|case|while|until|begin)\s`).MatchString(line) {
+			stack = append(stack, FoldingRangeStart{
+				Line: lineNum,
+				Kind: "region",
+			})
+		}
+
+		// End of foldable regions
+		if trimmed == "end" || strings.HasPrefix(trimmed, "end ") {
+			if len(stack) > 0 {
+				start := stack[len(stack)-1]
+				stack = stack[:len(stack)-1]
+
+				if lineNum > start.Line {
+					ranges = append(ranges, FoldingRange{
+						StartLine: start.Line,
+						EndLine:   lineNum,
+						Kind:      start.Kind,
+					})
+				}
+			}
+		}
+	}
+
+	return ranges
+}
+
 // Helper methods
 
 func (a *CrystalAnalyzer) checkSyntaxError(line string, lineNum int) *Diagnostic {
@@ -416,52 +1031,6 @@ func (a *CrystalAnalyzer) analyzeTokens(tokens []Token, uri string) []Diagnostic
 	return diagnostics
 }
 
-func (a *CrystalAnalyzer) getMethodCompletions(prefix string, doc *TextDocumentItem) []CompletionItem {
-	var items []CompletionItem
-
-	// Extract the variable name before the dot
-	parts := strings.Split(prefix, ".")
-	if len(parts) < 2 {
-		return items
-	}
-
-	// Get the variable name (last part before the dot)
-	varName := strings.TrimSpace(parts[len(parts)-2])
-
-	// Try to determine the type by looking for variable assignments
-	lines := strings.Split(doc.Text, "\n")
-	for _, line := range lines {
-		// Look for patterns like: varName = ClassName.new
-		if match := regexp.MustCompile(varName + `\s*=\s*(\w+)\.new`).FindStringSubmatch(line); match != nil {
-			className := match[1]
-
-			// Check if we have this class in our document
-			if classInfo, exists := a.documentClasses[className]; exists {
-				for _, method := range classInfo.Methods {
-					items = append(items, CompletionItem{
-						Label:  method,
-						Kind:   CompletionItemKindMethod,
-						Detail: fmt.Sprintf("Method of %s", className),
-					})
-				}
-				return items
-			}
-		}
-	}
-
-	// Fallback to standard library methods for common patterns
-	if methods, exists := a.stdlibMethods["String"]; exists {
-		for _, method := range methods {
-			items = append(items, CompletionItem{
-				Label: method,
-				Kind:  CompletionItemKindMethod,
-			})
-		}
-	}
-
-	return items
-}
-
 func (a *CrystalAnalyzer) findMethodCall(text string) string {
 	// Look for method calls like "method_name("
 	re := regexp.MustCompile(`(\w+)\s*\($`)
@@ -470,14 +1039,6 @@ func (a *CrystalAnalyzer) findMethodCall(text string) string {
 		return matches[1]
 	}
 	return ""
-}
-
-func getLastWord(text string) string {
-	words := strings.Fields(text)
-	if len(words) == 0 {
-		return ""
-	}
-	return words[len(words)-1]
 }
 
 func getWordAtPosition(line string, char int) string {

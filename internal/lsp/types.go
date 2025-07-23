@@ -97,6 +97,33 @@ type SignatureHelp struct {
 	ActiveParameter int                    `json:"activeParameter"`
 }
 
+// TextEdit represents a text edit
+type TextEdit struct {
+	Range   Range  `json:"range"`
+	NewText string `json:"newText"`
+}
+
+// FoldingRange represents a folding range
+type FoldingRange struct {
+	StartLine      int    `json:"startLine"`
+	StartCharacter *int   `json:"startCharacter,omitempty"`
+	EndLine        int    `json:"endLine"`
+	EndCharacter   *int   `json:"endCharacter,omitempty"`
+	Kind           string `json:"kind,omitempty"`
+}
+
+// FoldingRangeStart helper for tracking folding ranges during parsing
+type FoldingRangeStart struct {
+	Line int
+	Kind string
+}
+
+// DocumentHighlight represents a highlighted range in a document
+type DocumentHighlight struct {
+	Range Range `json:"range"`
+	Kind  int   `json:"kind,omitempty"`
+}
+
 // Constants for completion item kinds
 const (
 	CompletionItemKindText          = 1
@@ -162,4 +189,11 @@ const (
 	DiagnosticSeverityWarning     = 2
 	DiagnosticSeverityInformation = 3
 	DiagnosticSeverityHint        = 4
+)
+
+// Constants for document highlight kinds
+const (
+	DocumentHighlightKindText  = 1
+	DocumentHighlightKindRead  = 2
+	DocumentHighlightKindWrite = 3
 )

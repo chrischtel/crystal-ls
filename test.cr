@@ -4,32 +4,33 @@ class Person
   property age : Int32
   
   def initialize(@name : String, @age : Int32)
-  end
+end
   
   def greet
     puts "Hello, my name is #{@name} and I am #{@age} years old"
-  end
+end
   
   def birthday
     @age += 1
     puts "Happy birthday! Now I'm #{@age}"
-  end
+end
   
   def adult?
     @age >= 18
-  end
+end
 end
 
 module Greeting
   def self.welcome(person : Person)
     puts "Welcome, #{person.name}!"
-  end
+end
 end
 
 # Create an instance
 john = Person.new("John", 25)
 john.greet
 john.birthday
+
 
 
 

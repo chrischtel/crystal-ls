@@ -74,6 +74,14 @@ func (s *Server) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.
 		s.handleTextDocumentDefinition(ctx, conn, req)
 	case "textDocument/documentSymbol":
 		s.handleTextDocumentSymbol(ctx, conn, req)
+	case "textDocument/formatting":
+		s.handleTextDocumentFormatting(ctx, conn, req)
+	case "textDocument/foldingRange":
+		s.handleTextDocumentFoldingRange(ctx, conn, req)
+	case "textDocument/references":
+		s.handleTextDocumentReferences(ctx, conn, req)
+	case "textDocument/documentHighlight":
+		s.handleTextDocumentHighlight(ctx, conn, req)
 	case "shutdown":
 		s.handleShutdown(ctx, conn, req)
 	case "exit":
@@ -122,12 +130,16 @@ func (s *Server) handleInitialize(ctx context.Context, conn *jsonrpc2.Conn, req 
 				"resolveProvider":   false,
 				"triggerCharacters": []string{".", ":"},
 			},
-			"hoverProvider": true,
+			"hoverProvider":              true,
+			"definitionProvider":         true,
+			"referencesProvider":         true,
+			"documentHighlightProvider":  true,
+			"documentSymbolProvider":     true,
+			"documentFormattingProvider": true,
+			"foldingRangeProvider":       true,
 			"signatureHelpProvider": map[string]any{
 				"triggerCharacters": []string{"(", ","},
 			},
-			"definitionProvider":     true,
-			"documentSymbolProvider": true,
 		},
 		"serverInfo": map[string]any{
 			"name":    "Crystal Language Server",
@@ -326,6 +338,104 @@ func (s *Server) handleTextDocumentSymbol(ctx context.Context, conn *jsonrpc2.Co
 
 	symbols := s.analyzer.GetDocumentSymbols(doc)
 	conn.Reply(ctx, req.ID, symbols)
+}
+
+func (s *Server) handleTextDocumentFormatting(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
+	var params struct {
+		TextDocument TextDocumentIdentifier `json:"textDocument"`
+		Options      any                    `json:"options"` // FormattingOptions
+	}
+
+	if err := json.Unmarshal(*req.Params, &params); err != nil {
+		conn.ReplyWithError(ctx, req.ID, &jsonrpc2.Error{
+			Code:    jsonrpc2.CodeInvalidParams,
+			Message: err.Error(),
+		})
+		return
+	}
+
+	doc, exists := s.documents[params.TextDocument.URI]
+	if !exists {
+		conn.Reply(ctx, req.ID, []TextEdit{})
+		return
+	}
+
+	edits := s.analyzer.GetDocumentFormat(doc)
+	conn.Reply(ctx, req.ID, edits)
+}
+
+func (s *Server) handleTextDocumentFoldingRange(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
+	var params struct {
+		TextDocument TextDocumentIdentifier `json:"textDocument"`
+	}
+
+	if err := json.Unmarshal(*req.Params, &params); err != nil {
+		conn.ReplyWithError(ctx, req.ID, &jsonrpc2.Error{
+			Code:    jsonrpc2.CodeInvalidParams,
+			Message: err.Error(),
+		})
+		return
+	}
+
+	doc, exists := s.documents[params.TextDocument.URI]
+	if !exists {
+		conn.Reply(ctx, req.ID, []FoldingRange{})
+		return
+	}
+
+	ranges := s.analyzer.GetFoldingRanges(doc)
+	conn.Reply(ctx, req.ID, ranges)
+}
+
+func (s *Server) handleTextDocumentReferences(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
+	var params struct {
+		TextDocument TextDocumentIdentifier `json:"textDocument"`
+		Position     Position               `json:"position"`
+		Context      struct {
+			IncludeDeclaration bool `json:"includeDeclaration"`
+		} `json:"context"`
+	}
+
+	if err := json.Unmarshal(*req.Params, &params); err != nil {
+		conn.ReplyWithError(ctx, req.ID, &jsonrpc2.Error{
+			Code:    jsonrpc2.CodeInvalidParams,
+			Message: err.Error(),
+		})
+		return
+	}
+
+	doc, exists := s.documents[params.TextDocument.URI]
+	if !exists {
+		conn.Reply(ctx, req.ID, []Location{})
+		return
+	}
+
+	references := s.analyzer.GetReferences(doc, params.Position, params.Context.IncludeDeclaration)
+	conn.Reply(ctx, req.ID, references)
+}
+
+func (s *Server) handleTextDocumentHighlight(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
+	var params struct {
+		TextDocument TextDocumentIdentifier `json:"textDocument"`
+		Position     Position               `json:"position"`
+	}
+
+	if err := json.Unmarshal(*req.Params, &params); err != nil {
+		conn.ReplyWithError(ctx, req.ID, &jsonrpc2.Error{
+			Code:    jsonrpc2.CodeInvalidParams,
+			Message: err.Error(),
+		})
+		return
+	}
+
+	doc, exists := s.documents[params.TextDocument.URI]
+	if !exists {
+		conn.Reply(ctx, req.ID, []DocumentHighlight{})
+		return
+	}
+
+	highlights := s.analyzer.GetDocumentHighlights(doc, params.Position)
+	conn.Reply(ctx, req.ID, highlights)
 }
 
 func (s *Server) handleShutdown(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2.Request) {
