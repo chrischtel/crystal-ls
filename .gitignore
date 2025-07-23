@@ -29,6 +29,7 @@ vendor/
 .idea/
 .vscode/
 
+
 # OS-generated files
 .DS_Store
 Thumbs.db
