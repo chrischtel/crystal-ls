@@ -20,13 +20,6 @@
 ## 🗺️ Roadmap
 The project is in its early stages. The immediate focus is on establishing a solid foundation by implementing core LSP functionalities.
 
-- [ ] **Document Synchronization** (`textDocument/didOpen`, `didChange`, `didSave`, `didClose`)
-- [ ] **Hover** (`textDocument/hover`)
-- [ ] **Go to Definition** (`textDocument/definition`)
-- [ ] **Code Completion** (`textDocument/completion`)
-- [ ] **Diagnostics** (`textDocument/publishDiagnostics`)
-
-
 ---
 
 ## 📦 Installation
