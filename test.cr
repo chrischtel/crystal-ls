@@ -52,6 +52,15 @@ end
 calc = Calculator.new(10.0)
 john = Person.new("John", 25)
 
+class Test
+  def self.hello_world : String
+    "Hello World"
+  end
+end
+
+anc = Test.new()
+
+
 
 puts "hello"
 
