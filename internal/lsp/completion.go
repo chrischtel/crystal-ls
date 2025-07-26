@@ -47,6 +47,7 @@ type CompletionContext struct {
 	LastWord   string
 	InMethod   bool
 	InClass    bool
+	IsStatic   bool // true if we're looking for static methods on a class
 }
 
 type CompletionContextType int
@@ -70,10 +71,14 @@ func (a *CrystalAnalyzer) analyzeCompletionContext(doc *TextDocumentItem, pos Po
 
 		objectType := a.inferTypeOfExpression(beforeDot, doc, pos)
 
+		// Check if we're dealing with a class name (static context)
+		isStatic := a.isClassName(beforeDot)
+
 		context.Type = CompletionContextMethod
 		context.ObjectType = objectType
 		context.ObjectName = a.extractObjectName(beforeDot)
 		context.LastWord = afterDot
+		context.IsStatic = isStatic
 	}
 
 	return context
@@ -82,7 +87,7 @@ func (a *CrystalAnalyzer) analyzeCompletionContext(doc *TextDocumentItem, pos Po
 func (a *CrystalAnalyzer) getMethodCompletions(context CompletionContext, doc *TextDocumentItem) []CompletionItem {
 	var items []CompletionItem
 
-	methods := a.getMethodsForType(context.ObjectType)
+	methods := a.getMethodsForType(context.ObjectType, context.IsStatic)
 
 	for _, method := range methods {
 		if context.LastWord == "" || strings.HasPrefix(strings.ToLower(method.Name), strings.ToLower(context.LastWord)) {
@@ -98,18 +103,30 @@ func (a *CrystalAnalyzer) getMethodCompletions(context CompletionContext, doc *T
 	return items
 }
 
-func (a *CrystalAnalyzer) getMethodsForType(typeName string) []*MethodInfo {
+func (a *CrystalAnalyzer) getMethodsForType(typeName string, isStatic bool) []*MethodInfo {
 	var methods []*MethodInfo
 
 	if classInfo, exists := a.context.Classes[typeName]; exists {
 		for _, method := range classInfo.Methods {
-			methods = append(methods, method)
+			// Filter methods based on whether we want static or instance methods
+			if method.IsStatic == isStatic {
+				methods = append(methods, method)
+			}
 		}
 	}
 
-	methods = append(methods, a.getBuiltInMethodsForType(typeName)...)
+	// Only add built-in methods for instance contexts (not static)
+	if !isStatic {
+		methods = append(methods, a.getBuiltInMethodsForType(typeName)...)
+	}
 
 	return methods
+}
+
+func (a *CrystalAnalyzer) isClassName(name string) bool {
+	// Check if the name is a known class
+	_, exists := a.context.Classes[name]
+	return exists
 }
 
 func (a *CrystalAnalyzer) getBuiltInMethodsForType(typeName string) []*MethodInfo {
@@ -207,6 +224,13 @@ func (a *CrystalAnalyzer) inferTypeOfExpression(expression string, doc *TextDocu
 
 	if match := regexp.MustCompile(`^(\w+)$`).FindStringSubmatch(expression); match != nil {
 		varName := match[1]
+
+		// Check if it's a class name first
+		if a.isClassName(varName) {
+			return varName
+		}
+
+		// Then check if it's a variable
 		if varType, found := a.findVariableType(varName, doc, pos); found {
 			return varType
 		}
