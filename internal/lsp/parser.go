@@ -49,6 +49,40 @@ func (a *CrystalAnalyzer) parseDocumentStructure(doc *TextDocumentItem) {
 }
 
 func (a *CrystalAnalyzer) parseMethodDefinition(line string, lineNum int, currentClass *ClassInfo) {
+	// Check for static methods first (def self.method_name)
+	if match := regexp.MustCompile(`^\s*def\s+self\.(\w+[\?!]?)(?:\((.*?)\))?(?:\s*:\s*(\w+))?`).FindStringSubmatch(line); match != nil {
+		methodName := match[1]
+		paramsStr := ""
+		if len(match) > 2 {
+			paramsStr = match[2]
+		}
+		returnType := "Void"
+		if len(match) > 3 && match[3] != "" {
+			returnType = match[3]
+		}
+
+		parameters := a.parseParameters(paramsStr)
+
+		methodInfo := &MethodInfo{
+			Name:          methodName,
+			Parameters:    parameters,
+			ReturnType:    returnType,
+			Visibility:    "public",
+			Location:      Position{Line: lineNum, Character: 0},
+			Documentation: "Static method " + methodName,
+			IsProperty:    false,
+			IsInitializer: false,
+			IsStatic:      true,
+			Signature:     a.generateMethodSignature(methodName, parameters, returnType),
+		}
+
+		if currentClass != nil {
+			currentClass.Methods[methodName] = methodInfo
+		}
+		return
+	}
+
+	// Check for regular instance methods (def method_name)
 	if match := regexp.MustCompile(`^\s*def\s+(\w+[\?!]?)(?:\((.*?)\))?(?:\s*:\s*(\w+))?`).FindStringSubmatch(line); match != nil {
 		methodName := match[1]
 		paramsStr := ""
@@ -71,6 +105,7 @@ func (a *CrystalAnalyzer) parseMethodDefinition(line string, lineNum int, curren
 			Documentation: "Method " + methodName,
 			IsProperty:    false,
 			IsInitializer: methodName == "initialize",
+			IsStatic:      false,
 			Signature:     a.generateMethodSignature(methodName, parameters, returnType),
 		}
 

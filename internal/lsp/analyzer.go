@@ -36,6 +36,7 @@ type MethodInfo struct {
 	Documentation string
 	IsProperty    bool
 	IsInitializer bool
+	IsStatic      bool
 	Signature     string
 }
 
