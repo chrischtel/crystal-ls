@@ -208,9 +208,7 @@ func (a *CrystalAnalyzer) parseParameters(paramsStr string) []ParameterInfo {
 			parts := strings.Split(paramPart, ":")
 			if len(parts) >= 2 {
 				paramName = strings.TrimSpace(parts[0])
-				if strings.HasPrefix(paramName, "@") {
-					paramName = paramName[1:]
-				}
+				paramName = strings.TrimPrefix(paramName, "@")
 				typeAndDefault := strings.TrimSpace(parts[1])
 				if strings.Contains(typeAndDefault, "=") {
 					typeParts := strings.Split(typeAndDefault, "=")
