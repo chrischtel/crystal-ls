@@ -104,11 +104,17 @@ func (a *CrystalAnalyzer) checkSyntaxError(line string, pos Position) []Diagnost
 		diagnostics = append(diagnostics, diagnostic)
 	}
 
-	if match := regexp.MustCompile(`(\w+)\s*\(\s*([^)]*)\s*\)`).FindStringSubmatch(line); match != nil {
+	// Only validate parameter syntax in method definitions (def method_name(params))
+	if match := regexp.MustCompile(`^\s*def\s+(?:self\.)?(\w+)\s*\(\s*([^)]*)\s*\)`).FindStringSubmatch(line); match != nil {
 		params := strings.Split(match[2], ",")
 		for i, param := range params {
 			param = strings.TrimSpace(param)
-			if param != "" && !regexp.MustCompile(`^\w+(\s*:\s*\w+)?(\s*=\s*.+)?$`).MatchString(param) {
+			// Crystal parameter patterns:
+			// - @var : Type = default
+			// - var : Type = default
+			// - var : Type
+			// - var
+			if param != "" && !regexp.MustCompile(`^@?\w+(\s*:\s*\w+(\[\w+\])?)?(\s*=\s*.+)?$`).MatchString(param) {
 				paramStart := strings.Index(line, match[0])
 				if paramStart != -1 {
 					diagnostic := Diagnostic{
@@ -131,8 +137,16 @@ func (a *CrystalAnalyzer) checkSyntaxError(line string, pos Position) []Diagnost
 func (a *CrystalAnalyzer) checkUndefinedVariable(line string, pos Position, doc *TextDocumentItem) []Diagnostic {
 	var diagnostics []Diagnostic
 
+	// Skip lines that define methods, classes, etc.
+	if a.isDefinitionLine(line) {
+		return diagnostics
+	}
+
+	// Remove string content to avoid false positives
+	cleanLine := a.removeStringContent(line)
+
 	varPattern := regexp.MustCompile(`\b([a-zA-Z_]\w*)\b`)
-	matches := varPattern.FindAllStringSubmatch(line, -1)
+	matches := varPattern.FindAllStringSubmatch(cleanLine, -1)
 
 	for _, match := range matches {
 		varName := match[1]
@@ -141,11 +155,12 @@ func (a *CrystalAnalyzer) checkUndefinedVariable(line string, pos Position, doc 
 			continue
 		}
 
-		if a.isMethodCall(line, varName) {
+		if a.isMethodCall(cleanLine, varName) {
 			continue
 		}
 
 		if !a.isVariableDefined(varName, doc, pos) && !a.isClassDefined(varName) {
+			// Find the position in the original line
 			varStart := strings.Index(line, varName)
 			if varStart != -1 {
 				diagnostic := Diagnostic{
@@ -162,6 +177,40 @@ func (a *CrystalAnalyzer) checkUndefinedVariable(line string, pos Position, doc 
 	}
 
 	return diagnostics
+}
+
+func (a *CrystalAnalyzer) removeStringContent(line string) string {
+	// Remove content inside double quotes
+	re := regexp.MustCompile(`"[^"]*"`)
+	cleaned := re.ReplaceAllString(line, `""`)
+
+	// Remove content inside single quotes
+	re = regexp.MustCompile(`'[^']*'`)
+	cleaned = re.ReplaceAllString(cleaned, `''`)
+
+	return cleaned
+}
+
+func (a *CrystalAnalyzer) isDefinitionLine(line string) bool {
+	// Check if this line defines a class, method, property, etc.
+	// Be more specific to avoid false positives
+	patterns := []string{
+		`^\s*class\s+\w+`,     // class definition
+		`^\s*def\s+\w+`,       // method definition
+		`^\s*def\s+self\.\w+`, // static method definition
+		`^\s*property\s+\w+`,  // property definition
+		`^\s*module\s+\w+`,    // module definition
+		`^\s*enum\s+\w+`,      // enum definition
+		`^\s*struct\s+\w+`,    // struct definition
+		`^\s*end\s*$`,         // end keyword alone
+	}
+
+	for _, pattern := range patterns {
+		if matched, _ := regexp.MatchString(pattern, line); matched {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *CrystalAnalyzer) isKeyword(word string) bool {

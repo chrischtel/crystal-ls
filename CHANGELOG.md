@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [unreleased]
 
+### 🐛 Bug Fixes
+
+- Sticky diagnostic error squiggles
+- Auto-cmp not recognize static methods
+- *(diagnostics)* Fixed false detection diagnostics for parameter definitions, strings, and methods
+
+## [0.1.0-dev.17e649f5] - 2025-07-22
+
 ### ⚙️ Miscellaneous Tasks
 
 - *(repo)* Initial commit
